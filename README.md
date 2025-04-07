@@ -1,6 +1,10 @@
 # PyVPSConnect
 
-Control and manage multiple VPS instances from a central location with secure communications and real-time monitoring.
+<p align="center">
+  <img src="https://github.com/awiones/PyVPSConnect/blob/main/logo.png" alt="PyVPSConnect Logo" width="300">
+</p>
+
+A powerful Python tool to control and manage multiple VPS instances from a central location with secure communications and real-time monitoring.
 
 ## Quick Start
 
@@ -31,7 +35,7 @@ sudo python3 silent_start.py --stop
 
 ```bash
 # Clone repository
-git clone <your-repo-url>
+git clone https://github.com/awiones/PyVPSConnect.git
 cd PyVPSConnect
 
 # Start as background service
@@ -55,12 +59,14 @@ python3 client.py --host controller_ip --port 5555
 
 ### Controller Commands
 
-- `list` - Show connected VPS instances
-- `info <id>` - Show VPS details
-- `cmd <command>` - Run command on all VPS
-- `cmd <id> <command>` - Run command on specific VPS
-- `shell <id>` - Interactive shell
-- `exit` - Exit controller
+| Command | Description |
+|---------|-------------|
+| `list` | Show connected VPS instances |
+| `info <id>` | Show VPS details |
+| `cmd <command>` | Run command on all VPS |
+| `cmd <id> <command>` | Run command on specific VPS |
+| `shell <id>` | Interactive shell |
+| `exit` | Exit controller |
 
 ### Example Session
 
@@ -122,7 +128,7 @@ sudo python3 silent_start.py --status   # Check status
 tail -f /var/log/pyvpsconnect/controller.log
 ```
 
-## Security Notes
+## Security Best Practices
 
 - Enable SSL in production environments
 - Use custom certificates for better security
@@ -130,7 +136,7 @@ tail -f /var/log/pyvpsconnect/controller.log
 - Use strong authentication tokens
 - Regular security audits recommended
 
-## Requirements
+## System Requirements
 
 - Python 3.6+
 - Linux OS
@@ -139,23 +145,29 @@ tail -f /var/log/pyvpsconnect/controller.log
 
 ## Troubleshooting
 
-1. Connection Issues
+<details>
+<summary>Connection Issues</summary>
 
-   - Check firewall rules
-   - Verify port availability
-   - Ensure correct IP/hostname
+- Check firewall rules
+- Verify port availability
+- Ensure correct IP/hostname
+- Test network connectivity between hosts
+</details>
 
-2. Permission Errors
-   - Run controller setup as root
-   - Check log directory permissions
-   - Verify user permissions
+<details>
+<summary>Permission Errors</summary>
 
-## Support
+- Run controller setup as root
+- Check log directory permissions
+- Verify user permissions
+- Ensure Python has necessary system access
+</details>
 
-- Report issues on GitHub
-- Check documentation for updates
-- Community support available
+## Support & Community
+
+- [Report issues on GitHub](https://github.com/awiones/PyVPSConnect/issues)
+- [Check documentation](https://github.com/awiones/PyVPSConnect/wiki) for updates
 
 ## License
 
-MIT License - Feel free to modify and distribute
+This project is licensed under the MIT License - see the LICENSE file for details.
