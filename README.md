@@ -1,7 +1,7 @@
-# PyVPSConnect
+# RemotelyPy
 
 <p align="center">
-  <img src="https://github.com/awiones/PyVPSConnect/blob/main/logo.png" alt="PyVPSConnect Logo" width="300">
+  <img src="https://github.com/awiones/RemotelyPy/blob/main/logo.png" alt="RemotelyPy Logo" width="300">
 </p>
 
 A powerful Python tool to control and manage multiple VPS instances from a central location with secure communications and real-time monitoring.
@@ -35,8 +35,8 @@ sudo python3 silent_start.py --stop
 
 ```bash
 # Clone repository
-git clone https://github.com/awiones/PyVPSConnect.git
-cd PyVPSConnect
+git clone https://github.com/awiones/RemotelyPy.git
+cd RemotelyPy
 
 # Start as background service
 sudo python3 silent_start.py --start
@@ -71,18 +71,18 @@ python3 client.py --host controller_ip --port 5555
 ### Example Session
 
 ```bash
-PyVPSConnect> list
+RemotelyPy> list
 ID         Hostname          IP             Connected Since
 ----------------------------------------------------------------
 e2b18581   vps1.example     192.168.1.100  2023-04-07 15:21:08
 
-PyVPSConnect> shell e2b1
+RemotelyPy> shell e2b1
 Connected to vps1.example...
 vps1:~$ ls
 vps1:~$ cd /etc
 vps1:/etc$ exit
 
-PyVPSConnect> cmd df -h
+RemotelyPy> cmd df -h
 Sending to all VPS...
 ```
 
@@ -125,7 +125,7 @@ sudo python3 silent_start.py --status   # Check status
 ### Logs
 
 ```bash
-tail -f /var/log/pyvpsconnect/controller.log
+tail -f /var/log/RemotelyPy/controller.log
 ```
 
 ## Security Best Practices
@@ -165,8 +165,8 @@ tail -f /var/log/pyvpsconnect/controller.log
 
 ## Support & Community
 
-- [Report issues on GitHub](https://github.com/awiones/PyVPSConnect/issues)
-- [Check documentation](https://github.com/awiones/PyVPSConnect/wiki) for updates
+- [Report issues on GitHub](https://github.com/awiones/RemotelyPy/issues)
+- [Check documentation](https://github.com/awiones/RemotelyPy/wiki) for updates
 
 ## License
 
