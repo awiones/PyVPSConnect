@@ -1,7 +1,7 @@
 # RemotelyPy
 
 <p align="center">
-  <img src="https://github.com/awiones/RemotelyPy/blob/main/logo.png" alt="RemotelyPy Logo" width="300">
+  <img src="https://github.com/awiones/RemotelyPy/blob/main/logo.jpeg" alt="RemotelyPy Logo" width="300">
 </p>
 
 A powerful Python tool to control and manage multiple VPS instances from a central location with secure communications and real-time monitoring.
