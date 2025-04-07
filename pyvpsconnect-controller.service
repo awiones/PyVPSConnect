@@ -1,0 +1,17 @@
+[Unit]
+Description=PyVPSConnect Controller Service
+After=network.target
+
+[Service]
+Type=forking
+User=YOUR_USERNAME
+Group=YOUR_GROUP
+ExecStart=/usr/bin/python3 /home/awion/PyVPSConnect/controller.py --daemon \
+    --log-file /var/log/pyvpsconnect/controller.log \
+    --pid-file /var/run/pyvpsconnect/controller.pid \
+    --port 5555
+PIDFile=/var/run/pyvpsconnect/controller.pid
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
