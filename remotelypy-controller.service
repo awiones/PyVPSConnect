@@ -1,0 +1,17 @@
+[Unit]
+Description=RemotelyPy Controller Service
+After=network.target
+
+[Service]
+Type=forking
+User=YOUR_USERNAME
+Group=YOUR_GROUP
+ExecStart=/usr/bin/python3 /home/awion/RemotelyPy/assets/controller.py --daemon \
+    --log-file /var/log/remotelypy/controller.log \
+    --pid-file /var/run/remotelypy/controller.pid \
+    --port 5555
+PIDFile=/var/run/remotelypy/controller.pid
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

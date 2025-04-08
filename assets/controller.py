@@ -16,6 +16,7 @@ import sys
 import time
 import os
 import datetime
+import subprocess  # Add this import
 from typing import Dict, List, Any, Optional, Tuple, Set
 import uuid
 from collections import defaultdict
@@ -26,7 +27,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler()]
 )
-logger = logging.getLogger('pyvpsconnect-controller')
+logger = logging.getLogger('remotelypy-controller')
 
 class ClientConnection:
     """Manages an individual client connection."""
@@ -569,7 +570,7 @@ class CommandLineInterface:
     
     def show_help(self) -> None:
         """Show help information."""
-        print("\nPyVPSConnect Controller - Available Commands:")
+        print("\nRemotelyPy Controller - Available Commands:")
         print("  help             - Show this help message")
         print("  list             - List all connected clients")
         print("  info <client_id> - Show detailed information about a client")
@@ -868,7 +869,7 @@ class CommandLineInterface:
 
 def parse_arguments():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="PyVPSConnect Controller")
+    parser = argparse.ArgumentParser(description="RemotelyPy Controller")
     parser.add_argument("--host", default="0.0.0.0", help="Host interface to bind to")
     parser.add_argument("--port", type=int, default=5555, help="Port to listen on")
     parser.add_argument("--ssl", action="store_true", help="Enable SSL encryption")
@@ -895,7 +896,7 @@ def write_pid_file(pid_file: str) -> None:
         f.write(str(os.getpid()))
 
 def main():
-    """Main entry point for the controller."""
+    """Main entry point for the controller module."""
     args = parse_arguments()
     
     # Set the logging level
@@ -975,6 +976,70 @@ def main():
             controller.stop()
     
     return 0
+
+def detect_init_system() -> str:
+    """Detect the init system being used."""
+    # Check for systemd
+    if os.path.exists('/run/systemd/system'):
+        return 'systemd'
+    # Check for upstart
+    elif os.path.exists('/etc/init'):
+        return 'upstart'
+    # Assume sysvinit or other
+    else:
+        return 'other'
+
+def stop_service():
+    """Stop the service and all connections."""
+    init_system = detect_init_system()
+    
+    try:
+        if init_system == 'systemd':
+            # List all running instances
+            result = subprocess.run(['systemctl', 'list-units', 'remotelypy-controller@*', '--no-legend'], 
+                                 capture_output=True, text=True)
+            services = [line.split()[0] for line in result.stdout.splitlines()]
+            
+            if not services:
+                print("No running controller services found")
+                return True
+                
+            if len(services) > 1:
+                print("\nMultiple controller services found:")
+                for i, service in enumerate(services, 1):
+                    print(f"{i}. {service}")
+                choice = input("\nEnter number to stop (or 'all'): ").strip()
+                
+                if choice.lower() == 'all':
+                    for service in services:
+                        subprocess.run(['systemctl', 'stop', service], check=True)
+                elif choice.isdigit() and 1 <= int(choice) <= len(services):
+                    subprocess.run(['systemctl', 'stop', services[int(choice)-1]], check=True)
+                else:
+                    print("Invalid choice")
+                    return False
+            else:
+                subprocess.run(['systemctl', 'stop', services[0]], check=True)
+        else:
+            subprocess.run(['/etc/init.d/remotelypy-controller', 'stop'], check=True)
+        print("Service stopped successfully")
+        return True
+    except subprocess.CalledProcessError:
+        print("Error: Failed to stop service")
+        return False
+
+def status_service():
+    """Check service status."""
+    init_system = detect_init_system()
+    
+    try:
+        if init_system == 'systemd':
+            subprocess.run(['systemctl', 'status', 'remotelypy-controller@*'], check=False)
+        else:
+            subprocess.run(['/etc/init.d/remotelypy-controller', 'status'], check=False)
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 if __name__ == "__main__":
     sys.exit(main())

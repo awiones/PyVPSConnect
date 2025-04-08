@@ -4,170 +4,166 @@
   <img src="https://github.com/awiones/RemotelyPy/blob/main/logo.jpeg" alt="RemotelyPy Logo" width="300">
 </p>
 
-A powerful Python tool to control and manage multiple VPS instances from a central location with secure communications and real-time monitoring.
+<div align="center">
 
-## Quick Start
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.6+](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Unix-lightgrey)]()
+
+A secure Python-based remote management system for controlling multiple VPS instances through a central controller.
+
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Documentation](#documentation) • [Contributing](#contributing)
+
+</div>
+
+## 🚀 Features
+
+- **Secure Communication**: SSL encryption for all connections
+- **Interactive CLI**: User-friendly command-line interface
+- **Multi-Client Support**: Manage multiple VPS instances simultaneously
+- **Service Integration**: Native systemd/init.d support
+- **Shell Sessions**: Interactive shell with remote systems
+- **Command Broadcasting**: Execute commands across all clients
+- **Real-time Monitoring**: Live client status and health checks
+- **Auto-Reconnection**: Reliable connection handling
+
+## 📦 Installation
+
+### Prerequisites
+
+- Python 3.6 or higher
+- Linux/Unix-based system
+- Root access (for service installation)
+- OpenSSL (for certificate generation)
+
+### Quick Start
 
 ```bash
-# Start Controller (Background)
-sudo python3 silent_start.py --start
+# Clone the repository
+git clone https://github.com/awiones/RemotelyPy.git
+cd RemotelyPy
 
-# Start Client
-python3 client.py --host your_controller_ip --port 5555
+# Optional: Create virtual environment
+python -m venv venv
+source venv/bin/activate
 
-# Stop Controller
-sudo python3 silent_start.py --stop
+# Install dependencies
+pip install -r requirements.txt
+
+# Generate SSL certificates (recommended)
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 ```
 
-## Features
-
-- **Remote Control**: Execute commands on any connected VPS
-- **Interactive Shell**: Full terminal access to remote VPS
-- **Secure**: SSL encryption and client authentication
-- **Daemon Mode**: Run controller in background
-- **Auto-Recovery**: Automatic reconnection on connection loss
-- **Multi-Client**: Manage unlimited VPS instances
-- **Real-Time**: Instant command execution and response
-
-## Installation
+## 🔧 Usage
 
 ### Controller Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/awiones/RemotelyPy.git
-cd RemotelyPy
+# Start in interactive mode
+python main.py controller --port 5555
 
-# Start as background service
-sudo python3 silent_start.py --start
+# Start with SSL encryption
+python main.py controller --port 5555 --ssl --cert cert.pem --key key.pem
 
-# Check status
-sudo python3 silent_start.py --status
+# Install as system service
+sudo python main.py silent-start --start
 ```
 
-### Client Setup
+### Client Connection
 
 ```bash
-# Copy client.py to your VPS
-scp client.py user@vps_ip:~/
+# Basic connection
+python main.py client --host controller.example.com --port 5555
 
-# Run client
-python3 client.py --host controller_ip --port 5555
+# Secure connection with SSL
+python main.py client --host controller.example.com --port 5555 --ssl --cert cert.pem
 ```
 
-## Basic Usage
+## 📚 Documentation
 
 ### Controller Commands
 
-| Command | Description |
-|---------|-------------|
-| `list` | Show connected VPS instances |
-| `info <id>` | Show VPS details |
-| `cmd <command>` | Run command on all VPS |
-| `cmd <id> <command>` | Run command on specific VPS |
-| `shell <id>` | Interactive shell |
-| `exit` | Exit controller |
+| Command                     | Description                      |
+| --------------------------- | -------------------------------- |
+| `help`                      | Show available commands          |
+| `list`                      | List connected clients           |
+| `info <client_id>`          | Show client details              |
+| `cmd <command>`             | Broadcast command to all clients |
+| `cmd <client_id> <command>` | Send command to specific client  |
+| `shell <client_id>`         | Start interactive shell session  |
+| `exit`                      | Exit controller                  |
 
-### Example Session
-
-```bash
-RemotelyPy> list
-ID         Hostname          IP             Connected Since
-----------------------------------------------------------------
-e2b18581   vps1.example     192.168.1.100  2023-04-07 15:21:08
-
-RemotelyPy> shell e2b1
-Connected to vps1.example...
-vps1:~$ ls
-vps1:~$ cd /etc
-vps1:/etc$ exit
-
-RemotelyPy> cmd df -h
-Sending to all VPS...
-```
-
-## Configuration
-
-### Controller Options
+### Service Management
 
 ```bash
-python3 controller.py [OPTIONS]
-  --host HOST         Bind interface (default: 0.0.0.0)
-  --port PORT        Listen port (default: 5555)
-  --ssl              Enable SSL
-  --cert FILE        SSL certificate path
-  --key FILE         SSL key path
-  --daemon           Run in background
-  --log-file FILE    Log file location
+# Start service
+sudo python main.py silent-start --start
+
+# Stop service
+sudo python main.py silent-start --stop
+
+# Check status
+sudo python main.py silent-start --status
 ```
 
-### Client Options
+## 🔒 Security Best Practices
 
-```bash
-python3 client.py [OPTIONS]
-  --host HOST        Controller IP/hostname
-  --port PORT        Controller port
-  --ssl             Enable SSL
-  --cert FILE       SSL certificate
-  --id ID           Custom client ID
-```
+1. **SSL Configuration**
 
-## Service Management
+   - Always use SSL in production environments
+   - Use strong certificates from trusted authorities
+   - Regularly rotate certificates
 
-### Using silent_start.py
+2. **Network Security**
 
-```bash
-sudo python3 silent_start.py --start    # Start service
-sudo python3 silent_start.py --stop     # Stop service
-sudo python3 silent_start.py --status   # Check status
-```
+   - Run behind a firewall
+   - Use VPN when possible
+   - Limit access to specific IP ranges
 
-### Logs
+3. **Access Control**
+   - Implement strong authentication
+   - Use principle of least privilege
+   - Regular security audits
 
-```bash
-tail -f /var/log/RemotelyPy/controller.log
-```
+## 🔍 Troubleshooting
 
-## Security Best Practices
+### Common Issues
 
-- Enable SSL in production environments
-- Use custom certificates for better security
-- Keep controller behind firewall
-- Use strong authentication tokens
-- Regular security audits recommended
+1. **Connection Refused**
 
-## System Requirements
+   - Check if the controller is running
+   - Verify firewall settings
+   - Ensure correct port configuration
 
-- Python 3.6+
-- Linux OS
-- Root access (controller setup only)
-- Basic networking knowledge
+2. **SSL Certificate Errors**
 
-## Troubleshooting
+   - Verify certificate paths
+   - Check certificate expiration
+   - Ensure proper certificate permissions
 
-<details>
-<summary>Connection Issues</summary>
+3. **Service Start Failure**
+   - Check system logs (`journalctl -xe`)
+   - Verify user permissions
+   - Validate configuration files
 
-- Check firewall rules
-- Verify port availability
-- Ensure correct IP/hostname
-- Test network connectivity between hosts
-</details>
+## 🤝 Contributing
 
-<details>
-<summary>Permission Errors</summary>
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-- Run controller setup as root
-- Check log directory permissions
-- Verify user permissions
-- Ensure Python has necessary system access
-</details>
+## 📄 License
 
-## Support & Community
+Distributed under the MIT License. See `LICENSE` for more information.
 
-- [Report issues on GitHub](https://github.com/awiones/RemotelyPy/issues)
-- [Check documentation](https://github.com/awiones/RemotelyPy/wiki) for updates
+## 👥 Authors
 
-## License
+- **Al Ghozali Ramadhan** - _Initial work_ - [Awiones](https://github.com/awiones)
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## 🙏 Acknowledgments
+
+- OpenSSL for secure communication
+- Python community for excellent libraries
+- All contributors who help improve this project

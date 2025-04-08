@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PyVPSConnect Client
+RemotelyPy Client
 
 This script runs on VPS instances and connects back to a central controller.
 It receives commands, executes them, and returns the results to the controller.
@@ -26,7 +26,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler()]
 )
-logger = logging.getLogger('pyvpsconnect-client')
+logger = logging.getLogger('remotelypy-client')
 
 class PyVPSClient:
     """Client for PyVPSConnect that runs on VPS instances."""
@@ -378,7 +378,7 @@ class PyVPSClient:
 
 def parse_arguments():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="PyVPSConnect Client")
+    parser = argparse.ArgumentParser(description="RemotelyPy Client")
     parser.add_argument("--host", required=True, help="Controller server hostname or IP")
     parser.add_argument("--port", type=int, default=5555, help="Controller server port")
     parser.add_argument("--ssl", action="store_true", help="Use SSL encryption")
@@ -389,13 +389,14 @@ def parse_arguments():
                         help="Logging level")
     return parser.parse_args()
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the client module."""
     args = parse_arguments()
     
     # Set the logging level
     logging.getLogger().setLevel(getattr(logging, args.log_level))
     
-    logger.info("Starting PyVPSConnect Client...")
+    logger.info("Starting RemotelyPy Client...")
     client = PyVPSClient(
         server_host=args.host,
         server_port=args.port,
@@ -409,4 +410,7 @@ if __name__ == "__main__":
         client.run()
     except KeyboardInterrupt:
         logger.info("Client terminated by user")
-    sys.exit(0)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -13,8 +13,8 @@ def get_current_user():
 def setup_directories():
     """Create necessary directories for logs and pid files."""
     dirs = {
-        '/var/log/pyvpsconnect': 0o755,
-        '/var/run/pyvpsconnect': 0o755,
+        '/var/log/remotelypy': 0o755,
+        '/var/run/remotelypy': 0o755,
     }
     
     for directory, perms in dirs.items():
@@ -27,7 +27,7 @@ def setup_directories():
 def create_systemd_service():
     """Create and install systemd service file."""
     service_content = f"""[Unit]
-Description=PyVPSConnect Controller Service
+Description=RemotelyPy Controller Service
 After=network.target
 
 [Service]
@@ -35,17 +35,18 @@ Type=forking
 User={get_current_user()}
 Group={get_current_user()}
 ExecStart=/usr/bin/python3 {os.path.abspath('controller.py')} --daemon \\
-    --log-file /var/log/pyvpsconnect/controller.log \\
-    --pid-file /var/run/pyvpsconnect/controller.pid \\
+    --log-file /var/log/remotelypy/controller.log \\
+    --pid-file /var/run/remotelypy/controller.pid \\
+    --host %I \\
     --port 5555
-PIDFile=/var/run/pyvpsconnect/controller.pid
+PIDFile=/var/run/remotelypy/controller.pid
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 """
     
-    service_path = '/etc/systemd/system/pyvpsconnect-controller.service'
+    service_path = '/etc/systemd/system/remotelypy-controller@.service'  # Note the @ for templating
     try:
         with open(service_path, 'w') as f:
             f.write(service_content)
@@ -67,8 +68,10 @@ def reload_systemd():
 def enable_and_start_service():
     """Enable and start the service."""
     try:
-        subprocess.run(['systemctl', 'enable', 'pyvpsconnect-controller'], check=True)
-        subprocess.run(['systemctl', 'start', 'pyvpsconnect-controller'], check=True)
+        host = input("Enter IP/hostname to bind to [0.0.0.0]: ").strip() or "0.0.0.0"
+        service_name = f"remotelypy-controller@{host}"
+        subprocess.run(['systemctl', 'enable', service_name], check=True)
+        subprocess.run(['systemctl', 'start', service_name], check=True)
         return True
     except subprocess.CalledProcessError:
         print("Error: Failed to enable/start service")
@@ -90,18 +93,21 @@ def create_init_script():
     """Create a classic init.d script for non-systemd systems."""
     script_content = f"""#!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          pyvpsconnect-controller
+# Provides:          remotelypy-controller
 # Required-Start:    $network $remote_fs
 # Required-Stop:     $network $remote_fs
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Description:       PyVPSConnect Controller Service
+# Description:       RemotelyPy Controller Service
 ### END INIT INFO
 
+BIND_ADDRESS="0.0.0.0"  # Can be changed in /etc/default/remotelypy-controller
+[ -f /etc/default/remotelypy-controller ] && . /etc/default/remotelypy-controller
+
 DAEMON="/usr/bin/python3 {os.path.abspath('controller.py')}"
-DAEMON_OPTS="--daemon --log-file /var/log/pyvpsconnect/controller.log --pid-file /var/run/pyvpsconnect/controller.pid --port 5555"
-NAME="pyvpsconnect-controller"
-PIDFILE="/var/run/pyvpsconnect/controller.pid"
+DAEMON_OPTS="--daemon --log-file /var/log/remotelypy/controller.log --pid-file /var/run/remotelypy/controller.pid --host $BIND_ADDRESS --port 5555"
+NAME="remotelypy-controller"
+PIDFILE="/var/run/remotelypy/controller.pid"
 USER="{get_current_user()}"
 
 case "$1" in
@@ -136,7 +142,7 @@ esac
 
 exit 0"""
     
-    script_path = '/etc/init.d/pyvpsconnect-controller'
+    script_path = '/etc/init.d/remotelypy-controller'
     try:
         with open(script_path, 'w') as f:
             f.write(script_content)
@@ -145,6 +151,14 @@ exit 0"""
     except PermissionError:
         print("Error: Need root privileges to create init script")
         return False
+
+    # Create default configuration file
+    default_config = "BIND_ADDRESS=\"0.0.0.0\"\n"
+    try:
+        with open('/etc/default/remotelypy-controller', 'w') as f:
+            f.write(default_config)
+    except:
+        print("Warning: Could not create default configuration file")
 
 def setup_service():
     """Set up the service based on the init system."""
@@ -163,10 +177,10 @@ def setup_service():
             return False
         # For non-systemd systems, manually start the service
         try:
-            subprocess.run(['/etc/init.d/pyvpsconnect-controller', 'start'], check=True)
+            subprocess.run(['/etc/init.d/remotelypy-controller', 'start'], check=True)
             # Try to enable on boot if update-rc.d exists
             if os.path.exists('/usr/sbin/update-rc.d'):
-                subprocess.run(['update-rc.d', 'pyvpsconnect-controller', 'defaults'], check=True)
+                subprocess.run(['update-rc.d', 'remotelypy-controller', 'defaults'], check=True)
             return True
         except subprocess.CalledProcessError:
             print("Error: Failed to start service")
@@ -179,9 +193,14 @@ def stop_service():
     
     try:
         if init_system == 'systemd':
-            subprocess.run(['systemctl', 'stop', 'pyvpsconnect-controller'], check=True)
+            # List all running instances
+            result = subprocess.run(['systemctl', 'list-units', 'remotelypy-controller@*', '--no-legend'], 
+                                 capture_output=True, text=True)
+            for line in result.stdout.splitlines():
+                service_name = line.split()[0]
+                subprocess.run(['systemctl', 'stop', service_name], check=True)
         else:
-            subprocess.run(['/etc/init.d/pyvpsconnect-controller', 'stop'], check=True)
+            subprocess.run(['/etc/init.d/remotelypy-controller', 'stop'], check=True)
         print("Service stopped successfully")
         return True
     except subprocess.CalledProcessError:
@@ -194,9 +213,9 @@ def status_service():
     
     try:
         if init_system == 'systemd':
-            subprocess.run(['systemctl', 'status', 'pyvpsconnect-controller'], check=False)
+            subprocess.run(['systemctl', 'status', 'remotelypy-controller'], check=False)
         else:
-            subprocess.run(['/etc/init.d/pyvpsconnect-controller', 'status'], check=False)
+            subprocess.run(['/etc/init.d/remotelypy-controller', 'status'], check=False)
         return True
     except subprocess.CalledProcessError:
         return False
@@ -204,13 +223,14 @@ def status_service():
 def parse_arguments():
     """Parse command line arguments."""
     import argparse
-    parser = argparse.ArgumentParser(description="PyVPSConnect Service Manager")
+    parser = argparse.ArgumentParser(description="RemotelyPy Service Manager")
     parser.add_argument('--start', action='store_true', help='Start the service')
     parser.add_argument('--stop', action='store_true', help='Stop the service')
     parser.add_argument('--status', action='store_true', help='Check service status')
     return parser.parse_args()
 
 def main():
+    """Main entry point for the silent start module."""
     if os.geteuid() != 0:
         print("Error: This script must be run as root")
         return 1
@@ -222,7 +242,7 @@ def main():
     elif args.status:
         return 0 if status_service() else 1
     elif args.start:
-        print("Setting up PyVPSConnect Controller...")
+        print("Setting up RemotelyPy Controller...")
         steps = [
             ("Creating directories", setup_directories),
             ("Installing and starting service", setup_service)
@@ -235,13 +255,13 @@ def main():
                 return 1
             print("Done!")
         
-        print("\nPyVPSConnect Controller has been installed and started!")
+        print("\nRemotelyPy Controller has been installed and started!")
         print("You can check its status with:")
         if detect_init_system() == 'systemd':
-            print("  systemctl status pyvpsconnect-controller")
+            print("  systemctl status remotelypy-controller")
         else:
-            print("  /etc/init.d/pyvpsconnect-controller status")
-        print("View logs with: tail -f /var/log/pyvpsconnect/controller.log")
+            print("  /etc/init.d/remotelypy-controller status")
+        print("View logs with: tail -f /var/log/remotelypy/controller.log")
     else:
         print("Error: No action specified. Use --start, --stop, or --status")
         return 1
