@@ -404,6 +404,35 @@ def parse_arguments():
                         help="Logging level")
     return parser.parse_args()
 
+def test_connection(host: str, port: int) -> bool:
+    """Test TCP connection to server."""
+    try:
+        # Try both public and private IPs
+        ips_to_try = [host]
+        
+        # Try to get private IP format of the host
+        parts = host.split('.')
+        if len(parts) == 4:
+            private_ip = f"172.31.{parts[2]}.{parts[3]}"
+            ips_to_try.append(private_ip)
+        
+        for ip in ips_to_try:
+            try:
+                logger.info(f"Trying to connect to {ip}:{port}...")
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(5)
+                    if s.connect_ex((ip, port)) == 0:
+                        logger.info(f"Successfully connected to {ip}:{port}")
+                        return True
+            except:
+                continue
+                
+        logger.error("Could not connect to any available IP")
+        return False
+    except Exception as e:
+        logger.error(f"Connection test failed: {e}")
+        return False
+
 def main():
     """Main entry point for the client module."""
     args = parse_arguments()
@@ -411,24 +440,15 @@ def main():
     # Set the logging level
     logging.getLogger().setLevel(getattr(logging, args.log_level))
     
-    logger.info("Starting RemotelyPy Client...")
-    
-    # Add connectivity test before starting client
-    try:
-        logger.info(f"Testing connectivity to {args.host}:{args.port}...")
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(5)
-            result = s.connect_ex((args.host, args.port))
-            if result != 0:
-                logger.error("Initial connectivity test failed!")
-                logger.error("Common solutions:")
-                logger.error("1. Check if AWS security group allows inbound traffic on port %d", args.port)
-                logger.error("2. Verify the server is running: systemctl status remotelypy-controller")
-                logger.error("3. Check firewall rules: sudo ufw status")
-                return 1
-    except Exception as e:
-        logger.error(f"Connectivity test failed: {str(e)}")
+    # Test connection before starting client
+    if not test_connection(args.host, args.port):
+        logger.error("Connection test failed. Please check:")
+        logger.error("1. Security group allows inbound traffic on port 5555")
+        logger.error("2. No firewall is blocking the connection")
+        logger.error("3. The server is running and listening")
         return 1
+    
+    logger.info("Starting RemotelyPy Client...")
     
     client = PyVPSClient(
         server_host=args.host,

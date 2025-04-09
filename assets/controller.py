@@ -314,62 +314,21 @@ class RemotelyPyController:
 
     def _get_bind_ip(self, host: str) -> str:
         """Get appropriate IP address for binding."""
-        if host == '0.0.0.0':
-            return host
-            
-        # Check if this is a local address we can bind to
-        try:
-            socket.inet_aton(host)  # Validate IP format
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))  # Use Google DNS to get local IP
-                local_ip = s.getsockname()[0]
-                if host == local_ip:
-                    return host  # Can use this IP
-                if any(host.startswith(f"{local_ip.rsplit('.', 1)[0]}.") for local_ip in self._get_local_ips()):
-                    return host  # IP is in local network
-        except:
-            pass
-        return '0.0.0.0'  # Fallback to all interfaces
-    
-    def _get_local_ips(self) -> List[str]:
-        """Get list of all local IP addresses."""
-        ips = []
-        try:
-            interfaces = socket.getaddrinfo(socket.gethostname(), None)
-            for interface in interfaces:
-                ip = interface[4][0]
-                if not ip.startswith(('127.', '::1', 'fe80:')):
-                    ips.append(ip)
-        except:
-            pass
-        return ips
+        # Always bind to all interfaces in AWS environment
+        return '0.0.0.0'  # This ensures we listen on both public and private IPs
 
-    def _get_active_interfaces(self) -> List[Dict[str, str]]:
-        """Get all active network interfaces and their IPs."""
-        interfaces = []
+    def _get_private_ip(self) -> str:
+        """Get the private IP address in AWS VPC."""
         try:
-            import netifaces
-            for iface in netifaces.interfaces():
-                addrs = netifaces.ifaddresses(iface)
-                if netifaces.AF_INET in addrs:  # If interface has IPv4
-                    for addr in addrs[netifaces.AF_INET]:
-                        interfaces.append({
-                            'name': iface,
-                            'ip': addr['addr']
-                        })
-        except ImportError:
-            # Fallback if netifaces not available
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    s.connect(("8.8.8.8", 80))
-                    interfaces.append({
-                        'name': 'default',
-                        'ip': s.getsockname()[0]
-                    })
-            except:
-                pass
-        return interfaces
-    
+            # AWS instances can get their private IP this way
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "unknown"
+
     def start(self) -> bool:
         """
         Start the controller server.
@@ -410,20 +369,13 @@ class RemotelyPyController:
             # Show detailed network information
             logger.info("RemotelyPy Controller Network Information:")
             logger.info("-" * 50)
-            
-            if self.bind_ip == '0.0.0.0':
-                logger.info(f"Listening on all interfaces (0.0.0.0) port {self.port}")
-                interfaces = self._get_active_interfaces()
-                if interfaces:
-                    logger.info("Available on:")
-                    for iface in interfaces:
-                        logger.info(f"  - {iface['name']}: {iface['ip']}:{self.port}")
-            else:
-                logger.info(f"Listening on {self.bind_ip}:{self.port}")
-            
-            if self.public_ip and self.public_ip != '0.0.0.0':
-                logger.info(f"Public IP: {self.public_ip}:{self.port}")
-            
+            logger.info(f"Binding Address: 0.0.0.0:{self.port}")
+            logger.info(f"Private Network: {self._get_private_ip()}:{self.port}")
+            logger.info(f"Public Address: {self.public_ip}:{self.port}")
+            logger.info("-" * 50)
+            logger.info("AWS Security Group Configuration:")
+            logger.info("- Inbound Rule: Custom TCP, Port 5555, Source: 0.0.0.0/0")
+            logger.info("- If connection fails, verify security group rules")
             logger.info("-" * 50)
             
             # Start the main server thread
