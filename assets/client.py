@@ -60,6 +60,9 @@ class PyVPSClient:
         self.socket = None
         self.is_connected = False
         self.system_info = self._gather_system_info()
+        self.pending_commands = {}  # Dictionary to store pending command IDs and their timestamps
+        self._pending_commands = {}  # Dictionary to track pending commands and their responses
+        self.remote_cwd = "~"  # Track remote working directory
         
         # Resolve hostname to IP address
         try:
@@ -187,29 +190,44 @@ class PyVPSClient:
         Returns:
             Decoded message dictionary or None if reception failed
         """
+        buffer = b''
+        
         try:
-            # Read until newline delimiter
-            buffer = b''
-            while b'\n' not in buffer:
-                chunk = self.socket.recv(4096)
-                if not chunk:
-                    logger.error("Connection closed by server")
-                    self.is_connected = False
+            # Set a timeout to prevent blocking forever
+            self.socket.settimeout(0.5)
+            
+            # Try to receive data
+            chunk = self.socket.recv(4096)
+            if not chunk:
+                logger.error("Connection closed by server")
+                self.is_connected = False
+                return None
+            
+            buffer += chunk
+            
+            # Process complete messages (delimited by newlines)
+            if b'\n' in buffer:
+                message_data, remaining = buffer.split(b'\n', 1)
+                
+                # If there's more data, it's a problem in the protocol implementation
+                if remaining:
+                    logger.warning(f"Received extra data after message delimiter: {remaining}")
+                
+                try:
+                    # Decode and parse the message
+                    message = json.loads(message_data.decode('utf-8'))
+                    
+                    # Process the message
+                    self._process_message(message)
+                    
+                    return message
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse message as JSON: {str(e)}")
                     return None
-                buffer += chunk
             
-            # Split at the first newline
-            message_data, remaining = buffer.split(b'\n', 1)
-            
-            # If there's more data, it's a problem in the protocol implementation
-            if remaining:
-                logger.warning(f"Received extra data after message delimiter: {remaining}")
-            
-            # Parse the JSON message
-            return json.loads(message_data.decode('utf-8'))
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse message as JSON: {str(e)}")
+            return None
+        except socket.timeout:
+            # Timeout is normal, just return None
             return None
         except Exception as e:
             logger.error(f"Failed to receive message: {str(e)}")
@@ -283,6 +301,68 @@ class PyVPSClient:
             "message": message,
             "timestamp": time.time()
         })
+        
+    def _process_message(self, message: Dict[str, Any]) -> None:
+        """
+        Process a message received from the controller.
+        
+        Args:
+            message: The message dictionary
+        """
+        message_type = message.get('type')
+        
+        if message_type == 'command':
+            # Handle command from controller
+            command_id = message.get('command_id', 'unknown')
+            command = message.get('command', '')
+            
+            logger.info(f"Executing command from controller: {command}")
+            result = self.execute_command(command)
+            
+            # Send the result back
+            self._send_message({
+                'type': 'command_result',
+                'command_id': command_id,
+                'result': result
+            })
+            
+        elif message_type == 'command_response':
+            # Handle response to a command we sent
+            command_id = message.get('command_id', 'unknown')
+            result = message.get('result', {})
+            
+            # Store the result in the pending command
+            if command_id in self.pending_commands:
+                self.pending_commands[command_id]['result'] = result
+            
+            # Display the result
+            if result.get('status') == 'success':
+                if result.get('stdout'):
+                    print(result['stdout'].rstrip())
+                if result.get('stderr'):
+                    print(result['stderr'].rstrip(), file=sys.stderr)
+                
+                # Update remote working directory if available
+                if result.get('cwd'):
+                    self.remote_cwd = result.get('cwd')
+            else:
+                print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+                
+        elif message_type == 'ping':
+            # Respond to ping
+            self._send_message({
+                'type': 'pong',
+                'timestamp': time.time()
+            })
+            
+        elif message_type == 'chat':
+            # Handle chat message
+            sender = message.get('sender', 'unknown')
+            chat_msg = message.get('message', '')
+            print(f"\nChat from {sender}: {chat_msg}")
+            
+        else:
+            logger.warning(f"Received unknown message type: {message_type}")
 
     def run(self) -> None:
         """
@@ -298,33 +378,13 @@ class PyVPSClient:
             input_thread.daemon = True
             input_thread.start()
 
+            # Main message processing loop
             while self.is_connected:
                 # Receive and process messages from controller
                 message = self._receive_message()
-                if not message:
-                    # Connection lost or invalid message
-                    self.is_connected = False
-                    break
-
-                # Process message based on type
-                if message.get("type") == "command":
-                    command_id = message.get("command_id", "unknown")
-                    command = message.get("command", "")
-                    
-                    logger.info(f"Executing command from controller: {command}")
-                    result = self.execute_command(command)
-                    
-                    # Send the result back
-                    self._send_message({
-                        "type": "command_result",
-                        "command_id": command_id,
-                        "result": result
-                    })
-                elif message.get("type") == "ping":
-                    self._send_message({
-                        "type": "pong",
-                        "timestamp": time.time()
-                    })
+                
+                # Sleep a bit to prevent CPU hogging
+                time.sleep(0.1)
 
             logger.info("Connection lost. Reconnecting...")
             time.sleep(self.reconnect_delay)
@@ -343,8 +403,10 @@ class PyVPSClient:
             self.run()  # Attempt to reconnect
 
     def _handle_user_input(self) -> None:
-        """Handle user input for executing local commands."""
-        print("\nYou can now execute commands locally.")
+        """Handle user input for sending commands to the controller."""
+        print("\nRemotelyPy Client - Connected to controller")
+        print("Commands will be executed on the remote server.")
+        print("Type '/local <command>' to execute a command locally.")
         print("Type '/quit' to exit.")
         
         # Get username for prompt
@@ -356,33 +418,89 @@ class PyVPSClient:
         
         hostname = self.system_info.get('hostname', 'unknown')
         current_dir = "~"
-
+        
         while True:
             try:
-                # Update current directory
-                current_dir = os.getcwd().replace(os.path.expanduser('~'), '~')
-                
-                # Create styled prompt
-                prompt = f"\n┌──({username}㉿{hostname})-[{current_dir}]\n└─$ "
+                # Create styled prompt for remote execution
+                prompt = f"\n┌──(remote:{username}@{self.server_host})-[{self.remote_cwd}]\n└─$ "
                 command = input(prompt)
                 
-                if command.strip():
-                    if command.strip() == '/quit':
-                        logger.info("Exiting...")
-                        os._exit(0)
+                if not command.strip():
+                    continue
                     
-                    if self.is_connected:
-                        # Execute command locally and display result
-                        result = self.execute_command(command)
-                        if result['status'] == 'success':
-                            if result.get('stdout'):
-                                print(result['stdout'].rstrip())
-                            if result.get('stderr'):
-                                print(result['stderr'].rstrip(), file=sys.stderr)
-                        else:
-                            print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+                if command.strip() == '/quit':
+                    logger.info("Exiting...")
+                    os._exit(0)
+                
+                # Handle local command execution
+                if command.startswith('/local '):
+                    local_cmd = command[7:]  # Remove '/local ' prefix
+                    print(f"Executing locally: {local_cmd}")
+                    
+                    # Update current directory for local commands
+                    current_dir = os.getcwd().replace(os.path.expanduser('~'), '~')
+                    
+                    # Execute command locally and display result
+                    result = self.execute_command(local_cmd)
+                    if result['status'] == 'success':
+                        if result.get('stdout'):
+                            print(result['stdout'].rstrip())
+                        if result.get('stderr'):
+                            print(result['stderr'].rstrip(), file=sys.stderr)
                     else:
-                        print("Not connected to controller")
+                        print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+                    continue
+                
+                # Send command to controller
+                if self.is_connected:
+                    command_id = str(uuid.uuid4())
+                    
+                    # Store in pending commands
+                    self.pending_commands[command_id] = {
+                        'command': command,
+                        'timestamp': time.time(),
+                        'result': None
+                    }
+                    
+                    # Send the command to the controller
+                    success = self._send_message({
+                        "type": "command_request",
+                        "command_id": command_id,
+                        "command": command
+                    })
+                    
+                    if not success:
+                        print("Failed to send command to controller")
+                        del self.pending_commands[command_id]
+                        continue
+                    
+                    # Wait for response with timeout
+                    start_time = time.time()
+                    while time.time() - start_time < 10:  # 10 second timeout
+                        if command_id in self.pending_commands and self.pending_commands[command_id].get('result') is not None:
+                            result = self.pending_commands[command_id]['result']
+                            del self.pending_commands[command_id]
+                            
+                            # Display the result
+                            if result.get('status') == 'success':
+                                if result.get('stdout'):
+                                    print(result['stdout'].rstrip())
+                                if result.get('stderr'):
+                                    print(result['stderr'].rstrip(), file=sys.stderr)
+                                
+                                # Update remote working directory if it was a cd command
+                                if command.strip().startswith('cd ') and result.get('cwd'):
+                                    self.remote_cwd = result.get('cwd').replace(os.path.expanduser('~'), '~')
+                            else:
+                                print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+                            
+                            break
+                        time.sleep(0.1)
+                    else:
+                        print("Command timed out - no response received")
+                        del self.pending_commands[command_id]
+                else:
+                    print("Not connected to controller")
             except EOFError:
                 break
             except KeyboardInterrupt:

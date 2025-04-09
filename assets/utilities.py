@@ -10,7 +10,7 @@ import platform
 import requests
 import socket
 
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 __author__ = "Awiones"
 __license__ = "MIT"
 

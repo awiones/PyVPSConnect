@@ -163,9 +163,39 @@ class ClientConnection:
                     else:
                         logger.warning(f"Received result for unknown command ID: {command_id}")
                         
+            elif message_type == 'command_response':
+                # Handle response to a command request
+                command_id = message.get('command_id')
+                result = message.get('result', {})
+                
+                with self.lock:
+                    # Check if we have a handler for this command
+                    if command_id in self.response_handlers:
+                        callback = self.response_handlers.pop(command_id)
+                        callback(result)
+                    else:
+                        logger.warning(f"Received response for unknown command ID: {command_id}")
+                        
             elif message_type == 'pong':
                 # Handle ping response (just update last_seen which is already done)
                 pass
+                
+            elif message_type == 'command_request':
+                # Handle command request from client
+                command_id = message.get('command_id', 'unknown')
+                command = message.get('command', '')
+                
+                logger.info(f"Received command request from {self.get_identifier()}: {command}")
+                
+                # Execute the command on the controller
+                result = self.controller._execute_command(command)
+                
+                # Send the result back to the client
+                self._send_message({
+                    "type": "command_response",
+                    "command_id": command_id,
+                    "result": result
+                })
                 
             else:
                 logger.warning(f"Received unknown message type from {self.get_identifier()}: {message_type}")
@@ -210,6 +240,32 @@ class ClientConnection:
             "type": "ping",
             "timestamp": time.time()
         })
+        
+    def request_command(self, command: str, callback=None) -> str:
+        """
+        Send a command request to the controller.
+        
+        Args:
+            command: Shell command to execute on the controller
+            callback: Function to call with the result
+            
+        Returns:
+            Command ID
+        """
+        command_id = str(uuid.uuid4())
+        
+        message = {
+            "type": "command_request",
+            "command_id": command_id,
+            "command": command
+        }
+        
+        with self.lock:
+            if callback:
+                self.response_handlers[command_id] = callback
+        
+        self._send_message(message)
+        return command_id
     
     def _send_message(self, message: Dict[str, Any]) -> bool:
         """
@@ -321,9 +377,8 @@ class RemotelyPyController:
         self.health_check_thread.daemon = True
 
     def _get_private_ip(self) -> str:
-        """Get the private IP address in AWS VPC."""
+        """Get the private IP address of the machine."""
         try:
-            # AWS instances can get their private IP this way
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(('8.8.8.8', 80))
             ip = s.getsockname()[0]
@@ -378,9 +433,9 @@ class RemotelyPyController:
             logger.info(f"Private Network: {private_ip}:{self.port}")
             logger.info(f"Public Address: {self.public_ip}:{self.port} (for client connections)")
             logger.info("-" * 50)
-            logger.info("AWS Security Group Configuration:")
-            logger.info(f"- Inbound Rule: Custom TCP, Port {self.port}, Source: 0.0.0.0/0")
-            logger.info("- If connection fails, verify security group rules")
+            logger.info("Firewall Configuration:")
+            logger.info(f"- Ensure port {self.port} is open for incoming TCP connections")
+            logger.info("- If connection fails, verify firewall rules")
             logger.info("-" * 50)
             
             # Start the main server thread
@@ -575,6 +630,66 @@ class RemotelyPyController:
             for client in self.clients.values():
                 if client.is_active and client != exclude:
                     client._send_message(message)
+                    
+    def _execute_command(self, command: str) -> Dict[str, Any]:
+        """
+        Execute a shell command on the controller and return the result.
+        
+        Args:
+            command: Shell command to execute
+            
+        Returns:
+            Dictionary with execution results
+        """
+        try:
+            # Handle cd command specially
+            if command.strip().startswith('cd '):
+                new_dir = command.strip()[3:]
+                try:
+                    os.chdir(os.path.expanduser(new_dir))
+                    return {
+                        "status": "success",
+                        "exit_code": 0,
+                        "stdout": f"Changed directory to {os.getcwd()}",
+                        "stderr": "",
+                        "cwd": os.getcwd()
+                    }
+                except Exception as e:
+                    return {
+                        "status": "error",
+                        "error": str(e),
+                        "cwd": os.getcwd()
+                    }
+
+            # Execute other commands
+            result = subprocess.run(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60  # Timeout after 60 seconds
+            )
+            
+            return {
+                "status": "success",
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "cwd": os.getcwd()  # Include current working directory
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "status": "error",
+                "error": "Command timed out after 60 seconds",
+                "cwd": os.getcwd()
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "cwd": os.getcwd()
+            }
 
 class CommandLineInterface:
     """Command-line interface for the RemotelyPyController."""
@@ -620,6 +735,7 @@ class CommandLineInterface:
         print("  cmd <command>    - Send command to all clients")
         print("  cmd <client_id> <command> - Send command to a specific client")
         print("  shell <client_id> - Enter interactive shell mode with a client")
+        print("  local <command>  - Execute command locally on the controller")
         print("  exit             - Exit the controller")
     
     def process_command(self, command_line: str) -> None:
@@ -676,6 +792,13 @@ class CommandLineInterface:
                 print("Error: Client ID required")
                 return
             self.start_interactive_shell(parts[1])
+            return
+            
+        elif command == "local":
+            if len(parts) < 2:
+                print("Error: Command required")
+                return
+            self.execute_local_command(parts[1])
             return
             
         else:
@@ -862,6 +985,31 @@ class CommandLineInterface:
         if not client:
             print(f"No client found with ID starting with '{client_id}'")
             return
+            
+    def execute_local_command(self, command: str) -> None:
+        """
+        Execute a command locally on the controller.
+        
+        Args:
+            command: Shell command to execute
+        """
+        print(f"Executing local command: {command}")
+        result = self.controller._execute_command(command)
+        
+        if result.get('status') == 'success':
+            print(f"\nExit Code: {result.get('exit_code', 0)}")
+            
+            if result.get('stdout'):
+                print("\nStandard Output:")
+                print(result['stdout'].rstrip())
+                
+            if result.get('stderr'):
+                print("\nStandard Error:")
+                print(result['stderr'].rstrip())
+                
+            print(f"\nCurrent directory: {result.get('cwd', os.getcwd())}")
+        else:
+            print(f"\nError: {result.get('error', 'Unknown error')}")
 
         print(f"\nStarting interactive shell with {client.get_identifier()}")
         print("Type 'exit' to return to controller shell")
