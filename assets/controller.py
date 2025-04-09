@@ -981,11 +981,59 @@ class CommandLineInterface:
 
     def start_interactive_shell(self, client_id: str) -> None:
         """Start an interactive shell session with a client."""
-        client = self.controller.get_client_by_id(client_id)
-        if not client:
+        # Get the client first and store reference
+        client_instance = self.controller.get_client_by_id(client_id)
+        if not client_instance:
             print(f"No client found with ID starting with '{client_id}'")
             return
             
+        print(f"\nStarting interactive shell with {client_instance.get_identifier()}")
+        print("Type 'exit' to return to controller shell")
+        
+        current_dir = "~"  # Will be updated with first command response
+        
+        while True:
+            try:
+                # Show prompt with hostname and current directory
+                command = input(f"\n{client_instance.system_info.get('hostname', 'remote')}:{current_dir}$ ").strip()
+                
+                if not command:
+                    continue
+                    
+                if command.lower() == 'exit':
+                    print("Exiting interactive shell")
+                    break
+                
+                # Send command and wait for result
+                result = None
+                def handle_result(cmd_result):
+                    nonlocal result
+                    result = cmd_result
+                
+                client_instance.send_command(command, callback=handle_result)
+                
+                # Wait for result
+                while result is None:
+                    time.sleep(0.1)
+                
+                # Update current directory if provided
+                if result.get('cwd'):
+                    current_dir = result['cwd'].replace(os.path.expanduser('~'), '~')
+                
+                # Display result
+                if result.get('status') == 'success':
+                    if result.get('stdout'):
+                        print(result['stdout'].rstrip())
+                    if result.get('stderr'):
+                        print(result['stderr'].rstrip(), file=sys.stderr)
+                else:
+                    print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+                    
+            except KeyboardInterrupt:
+                print("\nUse 'exit' to return to controller shell")
+            except EOFError:
+                break
+
     def execute_local_command(self, command: str) -> None:
         """
         Execute a command locally on the controller.
@@ -1010,53 +1058,6 @@ class CommandLineInterface:
             print(f"\nCurrent directory: {result.get('cwd', os.getcwd())}")
         else:
             print(f"\nError: {result.get('error', 'Unknown error')}")
-
-        print(f"\nStarting interactive shell with {client.get_identifier()}")
-        print("Type 'exit' to return to controller shell")
-        
-        current_dir = "~"  # Will be updated with first command response
-        
-        while True:
-            try:
-                # Show prompt with hostname and current directory
-                command = input(f"\n{client.system_info.get('hostname', 'remote')}:{current_dir}$ ").strip()
-                
-                if not command:
-                    continue
-                    
-                if command.lower() == 'exit':
-                    print("Exiting interactive shell")
-                    break
-                
-                # Send command and wait for result
-                result = None
-                def handle_result(cmd_result):
-                    nonlocal result
-                    result = cmd_result
-                
-                client.send_command(command, callback=handle_result)
-                
-                # Wait for result
-                while result is None:
-                    time.sleep(0.1)
-                
-                # Update current directory if provided
-                if result.get('cwd'):
-                    current_dir = result['cwd'].replace(os.path.expanduser('~'), '~')
-                
-                # Display result
-                if result.get('status') == 'success':
-                    if result.get('stdout'):
-                        print(result['stdout'].rstrip())
-                    if result.get('stderr'):
-                        print(result['stderr'].rstrip(), file=sys.stderr)
-                else:
-                    print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
-                    
-            except KeyboardInterrupt:
-                print("\nUse 'exit' to return to controller shell")
-            except EOFError:
-                break
 
 def parse_arguments():
     """Parse command-line arguments."""
