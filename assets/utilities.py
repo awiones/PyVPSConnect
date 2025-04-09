@@ -7,8 +7,10 @@ This module contains utility functions and constants used across the RemotelyPy 
 
 import sys
 import platform
+import requests
+import socket
 
-__version__ = "2.0.0"
+__version__ = "2.2.0"
 __author__ = "Awiones"
 __license__ = "MIT"
 
@@ -53,3 +55,23 @@ def show_logo(small=False):
     if small:
         return SMALL_BANNER
     return LOGO
+
+def get_public_ip() -> str:
+    """Get the public IP address of the system."""
+    try:
+        # Try to get the public IP using an external service
+        response = requests.get('https://api.ipify.org')
+        if response.status_code == 200:
+            return response.text.strip()
+    except:
+        pass
+    
+    try:
+        # Fallback to getting local IP if public IP fetch fails
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except:
+        return "0.0.0.0"  # Return default if all methods fail

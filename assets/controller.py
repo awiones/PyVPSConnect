@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PyVPSConnect Controller
+RemotelyPy Controller
 
 This script runs on your local machine and manages connections with multiple VPS clients.
 It can send commands to individual or all connected clients and display their responses.
@@ -20,6 +20,7 @@ import subprocess  # Add this import
 from typing import Dict, List, Any, Optional, Tuple, Set
 import uuid
 from collections import defaultdict
+from assets.utilities import get_public_ip
 
 # Set up logging
 logging.basicConfig(
@@ -269,8 +270,8 @@ class ClientConnection:
                     })
                 self.response_handlers.clear()
 
-class PyVPSController:
-    """Main controller for managing VPS clients."""
+class RemotelyPyController:
+    """Main controller for managing RemotelyPy clients."""
     
     def __init__(
         self, 
@@ -282,17 +283,18 @@ class PyVPSController:
         auth_token: Optional[str] = None
     ):
         """
-        Initialize the PyVPSController.
+        Initialize the RemotelyPyController.
         
         Args:
-            host: Host interface to bind to (0.0.0.0 for all interfaces)
+            host: Host interface to bind to (or public IP for display only)
             port: Port to listen on
             use_ssl: Whether to use SSL encryption
             cert_file: Path to SSL certificate file
             key_file: Path to SSL private key file
             auth_token: Optional authentication token for clients
         """
-        self.host = host
+        self.public_ip = host  # Store public IP for display
+        self.bind_ip = self._get_bind_ip(host)  # Get appropriate binding IP
         self.port = port
         self.use_ssl = use_ssl
         self.cert_file = cert_file
@@ -309,7 +311,39 @@ class PyVPSController:
         # Set up health check thread
         self.health_check_thread = threading.Thread(target=self._health_check_loop)
         self.health_check_thread.daemon = True
-        
+
+    def _get_bind_ip(self, host: str) -> str:
+        """Get appropriate IP address for binding."""
+        if host == '0.0.0.0':
+            return host
+            
+        # Check if this is a local address we can bind to
+        try:
+            socket.inet_aton(host)  # Validate IP format
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))  # Use Google DNS to get local IP
+                local_ip = s.getsockname()[0]
+                if host == local_ip:
+                    return host  # Can use this IP
+                if any(host.startswith(f"{local_ip.rsplit('.', 1)[0]}.") for local_ip in self._get_local_ips()):
+                    return host  # IP is in local network
+        except:
+            pass
+        return '0.0.0.0'  # Fallback to all interfaces
+    
+    def _get_local_ips(self) -> List[str]:
+        """Get list of all local IP addresses."""
+        ips = []
+        try:
+            interfaces = socket.getaddrinfo(socket.gethostname(), None)
+            for interface in interfaces:
+                ip = interface[4][0]
+                if not ip.startswith(('127.', '::1', 'fe80:')):
+                    ips.append(ip)
+        except:
+            pass
+        return ips
+    
     def start(self) -> bool:
         """
         Start the controller server.
@@ -334,11 +368,24 @@ class PyVPSController:
                 self.server_socket = context.wrap_socket(self.server_socket, server_side=True)
             
             # Bind and listen
-            self.server_socket.bind((self.host, self.port))
+            try:
+                self.server_socket.bind((self.bind_ip, self.port))
+            except socket.error as e:
+                if self.bind_ip != '0.0.0.0':
+                    logger.warning(f"Could not bind to {self.bind_ip}, falling back to 0.0.0.0: {e}")
+                    self.bind_ip = '0.0.0.0'
+                    self.server_socket.bind((self.bind_ip, self.port))
+                else:
+                    raise
+                
             self.server_socket.listen(5)
             self.is_running = True
             
-            logger.info(f"Controller server started on {self.host}:{self.port}")
+            if self.bind_ip == '0.0.0.0':
+                logger.info(f"Controller server bound to all interfaces on port {self.port}")
+            else:
+                logger.info(f"Controller server bound to {self.bind_ip}:{self.port}")
+            logger.info(f"Public IP address: {self.public_ip}")
             
             # Start the main server thread
             self.main_thread = threading.Thread(target=self._accept_connections)
@@ -534,14 +581,14 @@ class PyVPSController:
                     client._send_message(message)
 
 class CommandLineInterface:
-    """Command-line interface for the PyVPSController."""
+    """Command-line interface for the RemotelyPyController."""
     
-    def __init__(self, controller: PyVPSController):
+    def __init__(self, controller: RemotelyPyController):
         """
         Initialize the CLI.
         
         Args:
-            controller: PyVPSController instance
+            controller: RemotelyPyController instance
         """
         self.controller = controller
         self.running = False
@@ -555,7 +602,7 @@ class CommandLineInterface:
         
         while self.running:
             try:
-                command = input("\nPyVPSConnect> ").strip()
+                command = input("\nRemotelyPy> ").strip()
                 
                 if not command:
                     continue
@@ -870,7 +917,7 @@ class CommandLineInterface:
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="RemotelyPy Controller")
-    parser.add_argument("--host", default="0.0.0.0", help="Host interface to bind to")
+    parser.add_argument("--host", default=get_public_ip(), help="Host interface to bind to (defaults to public IP)")
     parser.add_argument("--port", type=int, default=5555, help="Port to listen on")
     parser.add_argument("--ssl", action="store_true", help="Enable SSL encryption")
     parser.add_argument("--cert", help="Path to SSL certificate file")
@@ -939,7 +986,7 @@ def main():
             write_pid_file(args.pid_file)
     
     # Create and start the controller
-    controller = PyVPSController(
+    controller = RemotelyPyController(
         host=args.host,
         port=args.port,
         use_ssl=args.ssl,

@@ -11,7 +11,8 @@ import argparse
 from assets.client import main as client_main
 from assets.controller import main as controller_main
 from assets.silent_start import main as silent_start_main
-from assets.utilities import show_logo, show_version, show_full_version
+from assets.diagnostic import main as diagnostic_main
+from assets.utilities import show_logo, show_version, show_full_version, get_public_ip
 
 def create_parser():
     # Display the logo when the program starts
@@ -45,7 +46,7 @@ def create_parser():
 
     # Controller Command
     controller_parser = subparsers.add_parser('controller', help='Run as a controller')
-    controller_parser.add_argument('--host', default='0.0.0.0', help='Host interface to bind to')
+    controller_parser.add_argument('--host', default=get_public_ip(), help='Host interface to bind to (defaults to public IP)')
     controller_parser.add_argument('--port', type=int, default=5555, help='Port to listen on')
     controller_parser.add_argument('--ssl', action='store_true', help='Enable SSL encryption')
     controller_parser.add_argument('--cert', help='Path to SSL certificate file')
@@ -57,6 +58,9 @@ def create_parser():
     controller_parser.add_argument('--log-level', default="INFO",
                                  choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                                  help="Logging level")
+
+    # Add Diagnostic Command
+    subparsers.add_parser('diagnostic', help='Run system diagnostics')
 
     return parser
 
@@ -87,6 +91,8 @@ def main():
         elif args.command == 'controller':
             sys.argv = [sys.argv[0]] + [arg for arg in sys.argv[2:]]
             return controller_main()
+        elif args.command == 'diagnostic':
+            return diagnostic_main()
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         return 1
