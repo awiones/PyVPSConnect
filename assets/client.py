@@ -116,7 +116,28 @@ class PyVPSClient:
             
             # Connect using the resolved IP address
             logger.info(f"Attempting to connect to {self.server_ip}:{self.server_port}")
-            self.socket.connect((self.server_ip, self.server_port))
+            
+            try:
+                self.socket.connect((self.server_ip, self.server_port))
+            except socket.timeout:
+                logger.error("Connection timed out. Please check:")
+                logger.error("1. Firewall/Security Group rules on the server")
+                logger.error("2. The server is running and listening on the specified port")
+                logger.error(f"3. Port {self.server_port} is open on {self.server_ip}")
+                logger.error("4. Try: telnet %s %d", self.server_ip, self.server_port)
+                return False
+            except ConnectionRefusedError:
+                logger.error("Connection refused. Please check:")
+                logger.error("1. The server is running and listening")
+                logger.error("2. The correct IP and port are specified")
+                logger.error("3. No firewall is blocking the connection")
+                return False
+            except socket.gaierror:
+                logger.error("Could not resolve hostname. Please check:")
+                logger.error("1. The hostname/IP is correct")
+                logger.error("2. DNS resolution is working")
+                return False
+            
             self.is_connected = True
             
             # Send initial system information
@@ -132,12 +153,6 @@ class PyVPSClient:
             logger.info(f"Connected to controller at {self.server_ip}:{self.server_port}")
             return True
             
-        except socket.timeout:
-            logger.error("Connection attempt timed out")
-            if self.socket:
-                self.socket.close()
-            self.is_connected = False
-            return False
         except Exception as e:
             logger.error(f"Connection failed: {str(e)}")
             if self.socket:
@@ -397,6 +412,24 @@ def main():
     logging.getLogger().setLevel(getattr(logging, args.log_level))
     
     logger.info("Starting RemotelyPy Client...")
+    
+    # Add connectivity test before starting client
+    try:
+        logger.info(f"Testing connectivity to {args.host}:{args.port}...")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(5)
+            result = s.connect_ex((args.host, args.port))
+            if result != 0:
+                logger.error("Initial connectivity test failed!")
+                logger.error("Common solutions:")
+                logger.error("1. Check if AWS security group allows inbound traffic on port %d", args.port)
+                logger.error("2. Verify the server is running: systemctl status remotelypy-controller")
+                logger.error("3. Check firewall rules: sudo ufw status")
+                return 1
+    except Exception as e:
+        logger.error(f"Connectivity test failed: {str(e)}")
+        return 1
+    
     client = PyVPSClient(
         server_host=args.host,
         server_port=args.port,
