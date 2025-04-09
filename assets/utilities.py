@@ -57,17 +57,38 @@ def show_logo(small=False):
     return LOGO
 
 def get_public_ip() -> str:
-    """Get the public IP address of the system."""
+    """Get the public IP address of the system with improved reliability."""
+    # Try multiple services to get public IP
+    ip_services = [
+        'https://api.ipify.org',
+        'https://ifconfig.me/ip',
+        'https://icanhazip.com',
+        'https://ident.me'
+    ]
+    
+    # First try: AWS EC2 metadata service (specific to EC2 instances)
     try:
-        # Try to get the public IP using an external service
-        response = requests.get('https://api.ipify.org')
+        response = requests.get('http://169.254.169.254/latest/meta-data/public-ipv4', timeout=2)
         if response.status_code == 200:
-            return response.text.strip()
+            public_ip = response.text.strip()
+            if public_ip and public_ip != "0.0.0.0":
+                return public_ip
     except:
         pass
     
+    # Second try: External IP services
+    for service in ip_services:
+        try:
+            response = requests.get(service, timeout=5)
+            if response.status_code == 200:
+                public_ip = response.text.strip()
+                if public_ip and public_ip != "0.0.0.0":
+                    return public_ip
+        except:
+            continue
+    
+    # Third try: Local IP as fallback
     try:
-        # Fallback to getting local IP if public IP fetch fails
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]

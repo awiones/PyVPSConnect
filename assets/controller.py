@@ -293,13 +293,21 @@ class RemotelyPyController:
             key_file: Path to SSL private key file
             auth_token: Optional authentication token for clients
         """
-        self.public_ip = host  # Store public IP for display
-        self.bind_ip = self._get_bind_ip(host)  # Get appropriate binding IP
+        # Always bind to 0.0.0.0 (all interfaces) for maximum compatibility
+        self.bind_ip = '0.0.0.0'
         self.port = port
         self.use_ssl = use_ssl
         self.cert_file = cert_file
         self.key_file = key_file
         self.auth_token = auth_token
+        
+        # Handle public IP address determination
+        if host and host not in ['0.0.0.0', 'localhost', '127.0.0.1']:
+            # If a specific public IP was provided, use it
+            self.public_ip = host
+        else:
+            # Otherwise try to detect it
+            self.public_ip = get_public_ip()
         
         self.clients = {}  # Maps client_id to ClientConnection objects
         self.clients_lock = threading.Lock()
@@ -311,11 +319,6 @@ class RemotelyPyController:
         # Set up health check thread
         self.health_check_thread = threading.Thread(target=self._health_check_loop)
         self.health_check_thread.daemon = True
-
-    def _get_bind_ip(self, host: str) -> str:
-        """Get appropriate IP address for binding."""
-        # Always bind to all interfaces in AWS environment
-        return '0.0.0.0'  # This ensures we listen on both public and private IPs
 
     def _get_private_ip(self) -> str:
         """Get the private IP address in AWS VPC."""
@@ -352,29 +355,31 @@ class RemotelyPyController:
                 context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
                 self.server_socket = context.wrap_socket(self.server_socket, server_side=True)
             
-            # Bind and listen
+            # Bind to all interfaces (0.0.0.0) to accept connections on both public and private IPs
             try:
                 self.server_socket.bind((self.bind_ip, self.port))
             except socket.error as e:
-                if self.bind_ip != '0.0.0.0':
-                    logger.warning(f"Could not bind to {self.bind_ip}, falling back to 0.0.0.0: {e}")
-                    self.bind_ip = '0.0.0.0'
-                    self.server_socket.bind((self.bind_ip, self.port))
-                else:
-                    raise
+                logger.error(f"Could not bind to {self.bind_ip}: {e}")
+                return False
                 
             self.server_socket.listen(5)
             self.is_running = True
             
+            # Verify we have a valid public IP for clients to connect to
+            if self.public_ip == '0.0.0.0' or self.public_ip == 'localhost' or self.public_ip == '127.0.0.1':
+                logger.warning("Could not determine public IP address. Clients may have trouble connecting.")
+                logger.warning("Consider specifying your public IP with --host parameter.")
+            
             # Show detailed network information
+            private_ip = self._get_private_ip()
             logger.info("RemotelyPy Controller Network Information:")
             logger.info("-" * 50)
-            logger.info(f"Binding Address: 0.0.0.0:{self.port}")
-            logger.info(f"Private Network: {self._get_private_ip()}:{self.port}")
-            logger.info(f"Public Address: {self.public_ip}:{self.port}")
+            logger.info(f"Binding Address: {self.bind_ip}:{self.port} (listening on all interfaces)")
+            logger.info(f"Private Network: {private_ip}:{self.port}")
+            logger.info(f"Public Address: {self.public_ip}:{self.port} (for client connections)")
             logger.info("-" * 50)
             logger.info("AWS Security Group Configuration:")
-            logger.info("- Inbound Rule: Custom TCP, Port 5555, Source: 0.0.0.0/0")
+            logger.info(f"- Inbound Rule: Custom TCP, Port {self.port}, Source: 0.0.0.0/0")
             logger.info("- If connection fails, verify security group rules")
             logger.info("-" * 50)
             
@@ -908,7 +913,7 @@ class CommandLineInterface:
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="RemotelyPy Controller")
-    parser.add_argument("--host", default=get_public_ip(), help="Host interface to bind to (defaults to public IP)")
+    parser.add_argument("--host", help="Public IP address for clients to connect to (defaults to auto-detected)")
     parser.add_argument("--port", type=int, default=5555, help="Port to listen on")
     parser.add_argument("--ssl", action="store_true", help="Enable SSL encryption")
     parser.add_argument("--cert", help="Path to SSL certificate file")
@@ -978,7 +983,7 @@ def main():
     
     # Create and start the controller
     controller = RemotelyPyController(
-        host=args.host,
+        host=args.host if args.host else get_public_ip(),
         port=args.port,
         use_ssl=args.ssl,
         cert_file=args.cert,
