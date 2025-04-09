@@ -343,6 +343,32 @@ class RemotelyPyController:
         except:
             pass
         return ips
+
+    def _get_active_interfaces(self) -> List[Dict[str, str]]:
+        """Get all active network interfaces and their IPs."""
+        interfaces = []
+        try:
+            import netifaces
+            for iface in netifaces.interfaces():
+                addrs = netifaces.ifaddresses(iface)
+                if netifaces.AF_INET in addrs:  # If interface has IPv4
+                    for addr in addrs[netifaces.AF_INET]:
+                        interfaces.append({
+                            'name': iface,
+                            'ip': addr['addr']
+                        })
+        except ImportError:
+            # Fallback if netifaces not available
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(("8.8.8.8", 80))
+                    interfaces.append({
+                        'name': 'default',
+                        'ip': s.getsockname()[0]
+                    })
+            except:
+                pass
+        return interfaces
     
     def start(self) -> bool:
         """
@@ -381,11 +407,24 @@ class RemotelyPyController:
             self.server_socket.listen(5)
             self.is_running = True
             
+            # Show detailed network information
+            logger.info("RemotelyPy Controller Network Information:")
+            logger.info("-" * 50)
+            
             if self.bind_ip == '0.0.0.0':
-                logger.info(f"Controller server bound to all interfaces on port {self.port}")
+                logger.info(f"Listening on all interfaces (0.0.0.0) port {self.port}")
+                interfaces = self._get_active_interfaces()
+                if interfaces:
+                    logger.info("Available on:")
+                    for iface in interfaces:
+                        logger.info(f"  - {iface['name']}: {iface['ip']}:{self.port}")
             else:
-                logger.info(f"Controller server bound to {self.bind_ip}:{self.port}")
-            logger.info(f"Public IP address: {self.public_ip}")
+                logger.info(f"Listening on {self.bind_ip}:{self.port}")
+            
+            if self.public_ip and self.public_ip != '0.0.0.0':
+                logger.info(f"Public IP: {self.public_ip}:{self.port}")
+            
+            logger.info("-" * 50)
             
             # Start the main server thread
             self.main_thread = threading.Thread(target=self._accept_connections)
