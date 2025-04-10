@@ -434,11 +434,29 @@ class RemotelyPyController:
             
             # Show detailed network information
             private_ip = self._get_private_ip()
+            
+            # Determine the connection address clients should use
+            connection_ip = self.public_ip
+            if connection_ip == '0.0.0.0' or connection_ip == 'localhost' or connection_ip == '127.0.0.1':
+                connection_ip = private_ip
+                if private_ip.startswith('192.168.') or private_ip.startswith('10.') or private_ip.startswith('172.'):
+                    connection_note = "(only accessible on local network)"
+                else:
+                    connection_note = "(may not be accessible from outside networks)"
+            else:
+                connection_note = "(accessible from internet)"
+            
             logger.info("RemotelyPy Controller Network Information:")
             logger.info("-" * 50)
-            logger.info(f"Binding Address: {self.bind_ip}:{self.port} (listening on all interfaces)")
-            logger.info(f"Private Network: {private_ip}:{self.port}")
-            logger.info(f"Public Address: {self.public_ip}:{self.port} (for client connections)")
+            logger.info(f"Listening on: {self.bind_ip}:{self.port} (all network interfaces)")
+            
+            if private_ip != "unknown":
+                logger.info(f"Private IP: {private_ip}:{self.port} (for local network connections)")
+            
+            logger.info(f"CONNECTION ADDRESS: {connection_ip}:{self.port} {connection_note}")
+            logger.info("")
+            logger.info("To connect clients, use:")
+            logger.info(f"  python main.py client --host {connection_ip} --port {self.port}")
             logger.info("-" * 50)
             logger.info("Firewall Configuration:")
             logger.info(f"- Ensure port {self.port} is open for incoming TCP connections")
