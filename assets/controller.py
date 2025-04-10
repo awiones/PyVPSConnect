@@ -179,6 +179,13 @@ class ClientConnection:
             elif message_type == 'pong':
                 # Handle ping response (just update last_seen which is already done)
                 pass
+            
+            elif message_type == 'ping':
+                # Respond to ping with pong
+                self._send_message({
+                    "type": "pong",
+                    "timestamp": time.time()
+                })
                 
             elif message_type == 'command_request':
                 # Handle command request from client
