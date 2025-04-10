@@ -163,7 +163,7 @@ class ClientConnection:
                     else:
                         logger.warning(f"Received result for unknown command ID: {command_id}")
                         
-            elif message_type == 'command_response':
+            elif message_type == 'command_response' or message_type == 'command_result':
                 # Handle response to a command request
                 command_id = message.get('command_id')
                 result = message.get('result', {})
@@ -192,7 +192,7 @@ class ClientConnection:
                 
                 # Send the result back to the client
                 self._send_message({
-                    "type": "command_response",
+                    "type": "command_result",
                     "command_id": command_id,
                     "result": result
                 })
