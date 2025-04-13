@@ -10,7 +10,7 @@ import platform
 import requests
 import socket
 
-__version__ = "2.2.2"
+__version__ = "2.2.3"
 __author__ = "Awiones"
 __license__ = "MIT"
 
@@ -27,7 +27,7 @@ LOGO = """
 # Small banner for less verbose output
 SMALL_BANNER = """
 ╔═══════════════════════════════════════╗
-║           RemotelyPy v{:8}      ║
+║           RemotelyPy v{:8}        ║
 ╚═══════════════════════════════════════╝
 """.format(__version__)
 
